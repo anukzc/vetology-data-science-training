@@ -1,0 +1,4 @@
+Flake8
+pandas
+openpyxl
+jinja2
