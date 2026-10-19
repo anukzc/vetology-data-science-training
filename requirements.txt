@@ -2,3 +2,5 @@ Flake8
 pandas
 openpyxl
 jinja2
+dotenv
+google-genai
