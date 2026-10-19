@@ -5,6 +5,11 @@ import argparse
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 import pandas as pd
+from google import genai
+import dotenv
+
+dotenv.load_dotenv()
+client = genai.Client()
 
 ROWS_TO_KEEP = 101
 
@@ -20,7 +25,7 @@ def create_confusion_matrix(conditions):
     # Create the confusion matrix with the specified columns and index (rows) as the conditions
     confusion_matrix = pd.DataFrame(columns=cols, index=conditions.columns)
     confusion_matrix.index.name = 'condition'
-    print(confusion_matrix)
+    # print(confusion_matrix)
 
     path = "confusion_matrix_template.xlsx"
     confusion_matrix.to_excel(path, index=True)
@@ -62,6 +67,16 @@ def main():
 
     conditions = get_conditions_from_excel(args.file)
     create_confusion_matrix(conditions)
+
+    print("Confusion matrix has been created")
+
+    # Call Gemini API
+    interaction = client.interactions.create(
+        model="gemini-3.5-flash-lite",
+        input="Tell the user that the confusion matrix has been created and saved as 'confusion_matrix_template.xlsx'."
+    )
+
+    print(interaction.output_text)
 
 if __name__ == '__main__':
     main()
