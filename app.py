@@ -6,7 +6,6 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
-import pandas as pd
 from google import genai
 import dotenv
 
@@ -15,16 +14,23 @@ client = genai.Client()
 
 ROWS_TO_KEEP = 101
 
+
 def get_conditions_from_excel(file_path):
-    # Read the first ROWS_TO_KEEP rows of the excel file into a pandas DataFrame, then select the columns for each condition
+    # Read the first ROWS_TO_KEEP rows of the excel file into a pandas
+    # DataFrame, then select the columns for each condition
     full_df = pd.read_excel(file_path)
     first_rows = full_df.head(ROWS_TO_KEEP)
     conditions = first_rows.iloc[:, 8:]
     return conditions
 
+
 def format_confusion_matrix(conditions):
-    cols = ['True Positive', 'False Positive', 'True Negative', 'False Negative', 'Sensitivity', 'Specificity', 'Check', 'Positive Ground Truth', 'Negative Ground Truth', 'Ground Truth Check', '', 'Radiologist Agreement Rate']
-    # Create the confusion matrix with the specified columns and index (rows) as the conditions
+    cols = ['True Positive', 'False Positive', 'True Negative',
+            'False Negative', 'Sensitivity', 'Specificity', 'Check',
+            'Positive Ground Truth', 'Negative Ground Truth',
+            'Ground Truth Check', '', 'Radiologist Agreement Rate']
+    # Create the confusion matrix with the specified columns and index
+    # (rows) as the conditions
     confusion_matrix = pd.DataFrame(columns=cols, index=conditions.columns)
     confusion_matrix.index.name = 'condition'
     # print(confusion_matrix)
@@ -40,8 +46,9 @@ def format_confusion_matrix(conditions):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     # Border every cell in the table (header row + index column + body)
-    skip_cols = [None, 'Radiologist Agreement Rate'] 
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+    skip_cols = [None, 'Radiologist Agreement Rate']
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row,
+                            min_col=1, max_col=ws.max_column):
         for cell in row:
             if ws.cell(row=1, column=cell.column).value not in skip_cols:
                 cell.border = border
@@ -57,10 +64,12 @@ def format_confusion_matrix(conditions):
 
     # Auto adjust column width
     for col in ws.columns:
-        ws.column_dimensions[col[0].column_letter].width = max(len(str(c.value or '')) for c in col) + 1
-    
+        ws.column_dimensions[col[0].column_letter].width = max(
+            len(str(c.value or '')) for c in col) + 1
+
     wb.save(path)
     return path
+
 
 def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
     # Load the confusion matrix template
@@ -73,7 +82,7 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
 
         # TN FP
         # FN TP
-        cm = confusion_matrix(y_true, y_pred, labels=["Positive", "Negative"]) 
+        cm = confusion_matrix(y_true, y_pred, labels=["Positive", "Negative"])
 
         print(f"cm for {condition}:\n{cm}\n")
 
@@ -85,20 +94,28 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
         # Fill in the confusion matrix
         wb = load_workbook(cm_path)
         ws = wb.active
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=2, value=tp)  # True Positive
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=3, value=fp)  # False Positive
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=4, value=tn)  # True Negative
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=5, value=fn)  # False Negative
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=6, value=sensitivity)  # Sensitivity
-        ws.cell(row=conditions.columns.get_loc(condition) + 2, column=7, value=specificity)  # Specificity
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=2, value=tp)  # True Positive
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=3, value=fp)  # False Positive
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=4, value=tn)  # True Negative
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=5, value=fn)  # False Negative
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=6, value=sensitivity)  # Sensitivity
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=7, value=specificity)  # Specificity
         wb.save(cm_path)
 
 
 def main():
     # Parse command line argument for excel file path
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gold', type=str, required=True, help='Your gold labels excel file path')
-    parser.add_argument('--pred', type=str, required=True, help='Your predicted labelsexcel file path')
+    parser.add_argument('--gold', type=str, required=True,
+                        help='Your gold labels excel file path')
+    parser.add_argument('--pred', type=str, required=True,
+                        help='Your predicted labelsexcel file path')
     args = parser.parse_args()
 
     conditions = get_conditions_from_excel(args.gold)
@@ -108,12 +125,14 @@ def main():
     print("Confusion matrix has been created")
 
     # Call Gemini API
-    # interaction = client.interactions.create(
-    #     model="gemini-3.5-flash-lite",
-    #     input="Tell the user that the confusion matrix has been created and saved as 'confusion_matrix_template.xlsx'."
-    # )
+    interaction = client.interactions.create(
+        model="gemini-3.5-flash-lite",
+        input="Tell the user that the confusion matrix has "
+        "been created and saved as 'confusion_matrix_template.xlsx'."
+    )
 
-    # print(interaction.output_text)
+    print(interaction.output_text)
+
 
 if __name__ == '__main__':
     main()
