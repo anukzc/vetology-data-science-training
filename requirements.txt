@@ -4,3 +4,4 @@ openpyxl
 jinja2
 dotenv
 google-genai
+scikit-learn
