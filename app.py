@@ -84,12 +84,10 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
         # FN TP
         cm = confusion_matrix(y_true, y_pred, labels=["Positive", "Negative"])
 
-        print(f"cm for {condition}:\n{cm}\n")
-
         tp, fn, fp, tn = cm.ravel()
 
-        sensitivity = tp / (tp + fn)
-        specificity = tn / (tn + fp)
+        sensitivity = tp / (tp + fn) or "N/A"# Recall
+        specificity = tn / (tn + fp) or "N/A"
 
         # Fill in the confusion matrix
         wb = load_workbook(cm_path)
@@ -106,6 +104,14 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
                 column=6, value=sensitivity)  # Sensitivity
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=7, value=specificity)  # Specificity
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=8, value=len(y_true))  # Check
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=9, value=tp + fn)  # Positive Ground Truth
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=10, value=tn + fp)  # Negative Ground Truth
+        ws.cell(row=conditions.columns.get_loc(condition) + 2,
+                column=11, value=tp + fn + tn + fp)  # Ground Truth Check
         wb.save(cm_path)
 
 
@@ -124,14 +130,14 @@ def main():
 
     print("Confusion matrix has been created")
 
-    # Call Gemini API
-    interaction = client.interactions.create(
-        model="gemini-3.5-flash-lite",
-        input="Tell the user that the confusion matrix has "
-        "been created and saved as 'confusion_matrix_template.xlsx'."
-    )
+    # # Call Gemini API
+    # interaction = client.interactions.create(
+    #     model="gemini-3.5-flash-lite",
+    #     input="Tell the user that the confusion matrix has "
+    #     "been created and saved as 'confusion_matrix_template.xlsx'."
+    # )
 
-    print(interaction.output_text)
+    # print(interaction.output_text)
 
 
 if __name__ == '__main__':
