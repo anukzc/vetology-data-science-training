@@ -6,13 +6,14 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
+import json
 from google import genai
 import dotenv
 
 dotenv.load_dotenv()
 client = genai.Client()
 
-ROWS_TO_KEEP = 101
+ROWS_TO_KEEP = 100
 
 
 def get_conditions_from_excel(file_path):
@@ -71,13 +72,10 @@ def format_confusion_matrix(conditions):
     return path
 
 
-def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
+def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions):
     # Load the confusion matrix template
-    gold_df = pd.read_excel(gold_path)
-    pred_df = pd.read_excel(pred_path)
-
     for condition in conditions.columns:
-        y_true = gold_df[condition][:25]
+        y_true = gold_df[condition]
         y_pred = pred_df[condition]
 
         # TN FP
@@ -86,7 +84,7 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
 
         tp, fn, fp, tn = cm.ravel()
 
-        sensitivity = tp / (tp + fn) or "N/A"# Recall
+        sensitivity = tp / (tp + fn) or "N/A" # Recall
         specificity = tn / (tn + fp) or "N/A"
 
         # Fill in the confusion matrix
@@ -115,6 +113,34 @@ def fill_confusion_matrix(gold_path, pred_path, cm_path, conditions):
         wb.save(cm_path)
 
 
+def call_llm(type, gold_df):
+    reports = gold_df.iloc[:, 0:3]
+
+    with open("prompts.json", "r") as prompts:
+        if type == "canine_abdomen":
+                prompt = json.load(prompts)["canine_abdomen"]
+        elif type == "canine_thorax":
+                prompt = json.load(prompts)["canine_thorax"]
+        elif type == "feline_thorax":
+                prompt = json.load(prompts)["feline_thorax"]
+
+    full_response = ""
+    for i in range(0, len(reports), 5):  # Process in batches of 10
+        reports_batch = reports.iloc[i:i + 5]
+        print(reports_batch)
+        # Call Gemini API
+        interaction = client.interactions.create(
+            model="gemini-3.5-flash",
+            input=f"{prompt}\n\n{reports_batch.to_string(index=False)}"
+        )
+        full_response += interaction.output_text
+
+        print(interaction.output_text)
+        print(type(interaction.output_text))
+
+    return full_response
+
+
 def main():
     # Parse command line argument for excel file path
     parser = argparse.ArgumentParser()
@@ -122,22 +148,23 @@ def main():
                         help='Your gold labels excel file path')
     parser.add_argument('--pred', type=str, required=True,
                         help='Your predicted labelsexcel file path')
+    # parser.add_argument('--type', type=str, required=True,
+    #                     help='The type of data (canine_abdomen, canine_thorax, feline_thorax)')
     args = parser.parse_args()
+
+    gold_df = pd.read_excel(args.gold)[:ROWS_TO_KEEP]
+
+    # print(gold_df)
+
+    # pred = call_llm(args.type, gold_df)
+
+    pred_df = pd.read_excel(args.pred)
 
     conditions = get_conditions_from_excel(args.gold)
     cm_path = format_confusion_matrix(conditions)
-    fill_confusion_matrix(args.gold, args.pred, cm_path, conditions)
+    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions)
 
     print("Confusion matrix has been created")
-
-    # # Call Gemini API
-    # interaction = client.interactions.create(
-    #     model="gemini-3.5-flash-lite",
-    #     input="Tell the user that the confusion matrix has "
-    #     "been created and saved as 'confusion_matrix_template.xlsx'."
-    # )
-
-    # print(interaction.output_text)
 
 
 if __name__ == '__main__':
