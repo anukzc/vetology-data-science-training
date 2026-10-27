@@ -84,8 +84,8 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions):
 
         tp, fn, fp, tn = cm.ravel()
 
-        sensitivity = tp / (tp + fn) or "N/A" # Recall
-        specificity = tn / (tn + fp) or "N/A"
+        sensitivity = tp / (tp + fn)  # Recall
+        specificity = tn / (tn + fp)
 
         # Fill in the confusion matrix
         wb = load_workbook(cm_path)
@@ -118,11 +118,11 @@ def call_llm(type, gold_df):
 
     with open("prompts.json", "r") as prompts:
         if type == "canine_abdomen":
-                prompt = json.load(prompts)["canine_abdomen"]
+            prompt = json.load(prompts)["canine_abdomen"]
         elif type == "canine_thorax":
-                prompt = json.load(prompts)["canine_thorax"]
+            prompt = json.load(prompts)["canine_thorax"]
         elif type == "feline_thorax":
-                prompt = json.load(prompts)["feline_thorax"]
+            prompt = json.load(prompts)["feline_thorax"]
 
     full_response = ""
     for i in range(0, len(reports), 5):  # Process in batches of 10
@@ -149,7 +149,8 @@ def main():
     parser.add_argument('--pred', type=str, required=True,
                         help='Your predicted labelsexcel file path')
     # parser.add_argument('--type', type=str, required=True,
-    #                     help='The type of data (canine_abdomen, canine_thorax, feline_thorax)')
+    #                     help='The type of data (canine_abdomen,
+    #                     canine_thorax, feline_thorax)')
     args = parser.parse_args()
 
     gold_df = pd.read_excel(args.gold)[:ROWS_TO_KEEP]
