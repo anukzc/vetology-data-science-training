@@ -7,11 +7,10 @@ from sklearn.metrics import confusion_matrix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 import json
-from google import genai
+import ollama
 import dotenv
 
 dotenv.load_dotenv()
-client = genai.Client()
 
 ROWS_TO_KEEP = 100
 
@@ -26,6 +25,7 @@ def get_conditions_from_excel(file_path):
 
 
 def format_confusion_matrix(conditions):
+    # Creates an empty confusion matrix matchin the example
     cols = ['True Positive', 'False Positive', 'True Negative',
             'False Negative', 'Sensitivity', 'Specificity', 'Check',
             'Positive Ground Truth', 'Negative Ground Truth',
@@ -55,7 +55,7 @@ def format_confusion_matrix(conditions):
                 cell.border = border
 
     # Bold the header row
-    for cell in ws[1]:          # row 1: index header + column names
+    for cell in ws[1]:
         cell.font = bold
 
     # Center the column headers
@@ -72,8 +72,10 @@ def format_confusion_matrix(conditions):
     return path
 
 
-def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions):
+def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
     # Load the confusion matrix template
+    wb = load_workbook(cm_path)
+    ws = wb.active
     for condition in conditions.columns:
         y_true = gold_df[condition]
         y_pred = pred_df[condition]
@@ -84,12 +86,10 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions):
 
         tp, fn, fp, tn = cm.ravel()
 
-        sensitivity = tp / (tp + fn)  # Recall
-        specificity = tn / (tn + fp)
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else None  # Recall
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else None
 
         # Fill in the confusion matrix
-        wb = load_workbook(cm_path)
-        ws = wb.active
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=2, value=tp)  # True Positive
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
@@ -110,12 +110,17 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions):
                 column=10, value=tn + fp)  # Negative Ground Truth
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=11, value=tp + fn + tn + fp)  # Ground Truth Check
-        wb.save(cm_path)
+    wb.save(f"./data/{type}_ai_confusion_matrix.xlsx")
 
 
-def call_llm(type, gold_df):
-    reports = gold_df.iloc[:, 0:3]
+def save_to_excel(df, type):
+    output_filename = f"./data/{type}_ai_qwen_labels.xlsx"
+    df.to_excel(output_filename, index=False)
+    return output_filename
 
+
+def get_prompt(type):
+    # Load the appropriate prompt based on the type
     with open("prompts.json", "r") as prompts:
         if type == "canine_abdomen":
             prompt = json.load(prompts)["canine_abdomen"]
@@ -123,22 +128,51 @@ def call_llm(type, gold_df):
             prompt = json.load(prompts)["canine_thorax"]
         elif type == "feline_thorax":
             prompt = json.load(prompts)["feline_thorax"]
+    return prompt
 
-    full_response = ""
-    for i in range(0, len(reports), 5):  # Process in batches of 10
-        reports_batch = reports.iloc[i:i + 5]
-        print(reports_batch)
-        # Call Gemini API
-        interaction = client.interactions.create(
-            model="gemini-3.5-flash",
-            input=f"{prompt}\n\n{reports_batch.to_string(index=False)}"
-        )
-        full_response += interaction.output_text
 
-        print(interaction.output_text)
-        print(type(interaction.output_text))
+def build_schema(condition_names):
+    # Forces the llm to return exactly one Positive/Negative per condition
+    return {
+        "type": "object",
+        "properties": {
+            name: {"type": "string", "enum": ["Positive", "Negative"]}
+            for name in condition_names
+        },
+        "required": list(condition_names),
+    }
 
-    return full_response
+
+def call_llm(type, gold_df, condition_names):
+    # Grabs radiologist reports and appropriate prompt
+    reports = gold_df.iloc[:, 5:7]
+    prompt = get_prompt(type)
+    schema = build_schema(condition_names)
+
+    full_response = []
+    for i in range(len(reports)):
+        report = reports.iloc[[i]].to_string(index=False)
+        # Call model through ollama
+        response = ollama.chat(model='qwen3:4b', messages=[
+            {
+                'role': 'system',
+                'content': "You are an expert radiologist assistanting"
+                "in labeling data.",
+            },
+            {
+                'role': 'user',
+                'content': prompt + "\n\n" + report
+            }
+        ], format=schema)
+
+        content = response['message']['content']
+        print(f"Report {i+1} done")
+        full_response.append(json.loads(content))
+
+    pred_df = pd.DataFrame(full_response, columns=condition_names)
+    save_to_excel(pred_df, type)
+
+    return pred_df
 
 
 def main():
@@ -146,26 +180,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gold', type=str, required=True,
                         help='Your gold labels excel file path')
-    parser.add_argument('--pred', type=str, required=True,
-                        help='Your predicted labelsexcel file path')
-    # parser.add_argument('--type', type=str, required=True,
-    #                     help='The type of data (canine_abdomen,
-    #                     canine_thorax, feline_thorax)')
+    # parser.add_argument('--pred', type=str, required=True,
+    #                     help='Your predicted labelsexcel file path')
+    parser.add_argument('--type', type=str, required=True,
+                        help='The type of data (canine_abdomen, '
+                        'canine_thorax, feline_thorax)')
+
     args = parser.parse_args()
 
-    gold_df = pd.read_excel(args.gold)[:ROWS_TO_KEEP]
-
-    # print(gold_df)
-
-    # pred = call_llm(args.type, gold_df)
-
-    pred_df = pd.read_excel(args.pred)
-
     conditions = get_conditions_from_excel(args.gold)
-    cm_path = format_confusion_matrix(conditions)
-    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions)
 
-    print("Confusion matrix has been created")
+    gold_df = pd.read_excel(args.gold)[:ROWS_TO_KEEP]
+    pred_df = call_llm(args.type, gold_df, list(conditions.columns))
+
+    cm_path = format_confusion_matrix(conditions)
+    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, args.type)
 
 
 if __name__ == '__main__':
