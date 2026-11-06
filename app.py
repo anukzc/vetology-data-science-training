@@ -3,10 +3,13 @@
 
 import argparse
 import pandas as pd
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 import json
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import ollama
 import dotenv
 
@@ -111,6 +114,17 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=11, value=tp + fn + tn + fp)  # Ground Truth Check
     wb.save(f"./data/{type}_ai_confusion_matrix.xlsx")
+        # One overall confusion matrix across all conditions
+    all_true = gold_df[conditions.columns].values.ravel()
+    all_pred = pred_df[conditions.columns].values.ravel()
+    overall_cm = confusion_matrix(all_true, all_pred, labels=["Positive", "Negative"])
+
+    disp = ConfusionMatrixDisplay(overall_cm, display_labels=["Positive", "Negative"])
+    disp.plot(cmap="Blues", colorbar=False)
+    disp.ax_.set_title(f"{type}: all conditions")
+    plt.savefig(f"./data/{type}_confusion_matrix_2.png", bbox_inches="tight")
+    plt.close()
+
 
 
 def save_to_excel(df, type):
@@ -163,7 +177,7 @@ def call_llm(type, gold_df, condition_names):
                 'role': 'user',
                 'content': prompt + "\n\n" + report
             }
-        ], format=schema)
+        ], format=schema, think=False)
 
         content = response['message']['content']
         print(f"Report {i+1} done")

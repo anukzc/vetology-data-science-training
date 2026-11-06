@@ -6,3 +6,4 @@ dotenv
 google-genai
 scikit-learn
 ollama
+matplotlib
