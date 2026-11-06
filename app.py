@@ -113,7 +113,7 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
                 column=10, value=tn + fp)  # Negative Ground Truth
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=11, value=tp + fn + tn + fp)  # Ground Truth Check
-    wb.save(f"./data/{type}_ai_confusion_matrix.xlsx")
+    wb.save(f"./data/{type}_confusion_matrix.xlsx")
         # One overall confusion matrix across all conditions
     all_true = gold_df[conditions.columns].values.ravel()
     all_pred = pred_df[conditions.columns].values.ravel()
@@ -128,7 +128,7 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
 
 
 def save_to_excel(df, type):
-    output_filename = f"./data/{type}_ai_qwen_labels.xlsx"
+    output_filename = f"./data/{type}_qwen_labels.xlsx"
     df.to_excel(output_filename, index=False)
     return output_filename
 
@@ -159,7 +159,7 @@ def build_schema(condition_names):
 
 def call_llm(type, gold_df, condition_names):
     # Grabs radiologist reports and appropriate prompt
-    reports = gold_df.iloc[:, 5:7]
+    reports = gold_df.iloc[:, 0:3]
     prompt = get_prompt(type)
     schema = build_schema(condition_names)
 
@@ -170,7 +170,7 @@ def call_llm(type, gold_df, condition_names):
         response = ollama.chat(model='qwen3:4b', messages=[
             {
                 'role': 'system',
-                'content': "You are an expert radiologist assistanting"
+                'content': "You are an expert radiologist assistanting "
                 "in labeling data.",
             },
             {
