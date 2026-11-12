@@ -15,15 +15,15 @@ import dotenv
 
 dotenv.load_dotenv()
 
-ROWS_TO_KEEP = 100
+RADIOLOGY_TYPES = ("canine_thorax", "canine_abdomen", "feline_thorax")
 
 
 def get_conditions_from_excel(file_path):
-    # Read the first ROWS_TO_KEEP rows of the excel file into a pandas
-    # DataFrame, then select the columns for each condition
+    # Read the excel file into a pandas DataFrame
+    # select the columns for each condition
     full_df = pd.read_excel(file_path)
-    first_rows = full_df.head(ROWS_TO_KEEP)
-    conditions = first_rows.iloc[:, 8:]
+    first_row = full_df.head(1)
+    conditions = first_row.iloc[:, 8:]
     return conditions
 
 
@@ -157,9 +157,9 @@ def build_schema(condition_names):
     }
 
 
-def call_llm(type, gold_df, condition_names):
+def call_llm(type, model, gold_df, condition_names):
     # Grabs radiologist reports and appropriate prompt
-    reports = gold_df.iloc[:, 0:3]
+    reports = gold_df.iloc[:, 0:4]
     prompt = get_prompt(type)
     schema = build_schema(condition_names)
 
@@ -167,7 +167,7 @@ def call_llm(type, gold_df, condition_names):
     for i in range(len(reports)):
         report = reports.iloc[[i]].to_string(index=False)
         # Call model through ollama
-        response = ollama.chat(model='qwen3:4b', messages=[
+        response = ollama.chat(model=model, messages=[
             {
                 'role': 'system',
                 'content': "You are an expert radiologist assistanting "
@@ -194,21 +194,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gold', type=str, required=True,
                         help='Your gold labels excel file path')
-    # parser.add_argument('--pred', type=str, required=True,
-    #                     help='Your predicted labelsexcel file path')
-    parser.add_argument('--type', type=str, required=True,
-                        help='The type of data (canine_abdomen, '
-                        'canine_thorax, feline_thorax)')
+    parser.add_argument('--data_type', default="canine_thorax", type=str, 
+                        required=True, choices=RADIOLOGY_TYPES, help='The type of data (canine_abdomen, canine_thorax, feline_thorax)')
+    parser.add_argument("--model", default="qwen3:4b", 
+                        help="Ollama model name (default: qwen3:4b)")
+    parser.add_argument("--rows", type=int, default=100, choices=range(1, 100),
+                        help="Only the first N data rows are sent to the LLM (default: 100)")
+    # parser.add_argument('--matrix_type', default="2", type=str, 
+    #                     choices=["1", "2"], help='Type of confusion matrix to generate (1 or 2)')
 
     args = parser.parse_args()
 
     conditions = get_conditions_from_excel(args.gold)
 
-    gold_df = pd.read_excel(args.gold)[:ROWS_TO_KEEP]
-    pred_df = call_llm(args.type, gold_df, list(conditions.columns))
+    gold_df = pd.read_excel(args.gold)[:args.rows]
+    pred_df = call_llm(args.data_type, args.model, gold_df, list(conditions.columns))
 
     cm_path = format_confusion_matrix(conditions)
-    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, args.type)
+    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, args.data_type)
 
 
 if __name__ == '__main__':
