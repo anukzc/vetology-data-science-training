@@ -18,16 +18,12 @@ dotenv.load_dotenv()
 RADIOLOGY_TYPES = ("canine_thorax", "canine_abdomen", "feline_thorax")
 
 
-def get_conditions_from_excel(file_path):
-    # Read the excel file into a pandas DataFrame
-    # select the columns for each condition
-    full_df = pd.read_excel(file_path)
-    first_row = full_df.head(1)
-    conditions = first_row.iloc[:, 8:]
+def get_conditions(df):
+    conditions = df.iloc[:0, 8:]
     return conditions
 
 
-def format_confusion_matrix(conditions):
+def format_confusion_matrix(conditions, data_type, matrix_type):
     # Creates an empty confusion matrix matchin the example
     cols = ['True Positive', 'False Positive', 'True Negative',
             'False Negative', 'Sensitivity', 'Specificity', 'Check',
@@ -39,7 +35,7 @@ def format_confusion_matrix(conditions):
     confusion_matrix.index.name = 'condition'
     # print(confusion_matrix)
 
-    path = "confusion_matrix_template.xlsx"
+    path = f"./data/{data_type}_confusion_matrix_{matrix_type}.xlsx"
     confusion_matrix.to_excel(path, index=True)
 
     # Format the excel file
@@ -75,7 +71,8 @@ def format_confusion_matrix(conditions):
     return path
 
 
-def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
+
+def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, data_type, matrix_type):
     # Load the confusion matrix template
     wb = load_workbook(cm_path)
     ws = wb.active
@@ -83,8 +80,8 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
         y_true = gold_df[condition]
         y_pred = pred_df[condition]
 
-        # TN FP
-        # FN TP
+        # TP FN
+        # FP TN
         cm = confusion_matrix(y_true, y_pred, labels=["Positive", "Negative"])
 
         tp, fn, fp, tn = cm.ravel()
@@ -113,35 +110,34 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, type):
                 column=10, value=tn + fp)  # Negative Ground Truth
         ws.cell(row=conditions.columns.get_loc(condition) + 2,
                 column=11, value=tp + fn + tn + fp)  # Ground Truth Check
-    wb.save(f"./data/{type}_confusion_matrix.xlsx")
-        # One overall confusion matrix across all conditions
+    wb.save(cm_path)
+    
+    # One overall confusion matrix across all conditions
     all_true = gold_df[conditions.columns].values.ravel()
     all_pred = pred_df[conditions.columns].values.ravel()
     overall_cm = confusion_matrix(all_true, all_pred, labels=["Positive", "Negative"])
 
     disp = ConfusionMatrixDisplay(overall_cm, display_labels=["Positive", "Negative"])
     disp.plot(cmap="Blues", colorbar=False)
-    disp.ax_.set_title(f"{type}: all conditions")
-    plt.savefig(f"./data/{type}_confusion_matrix_2.png", bbox_inches="tight")
+    disp.ax_.set_title(f"{data_type}: all conditions")
+    plt.savefig(f"./data/{data_type}_confusion_matrix_{matrix_type}.png", bbox_inches="tight")
     plt.close()
 
 
-
-def save_to_excel(df, type):
-    output_filename = f"./data/{type}_qwen_labels.xlsx"
+def save_to_excel(df, data_type, matrix_type):
+    if matrix_type == 2:
+        report_type = "radiologist"
+    else:
+        report_type = "AI"
+    output_filename = f"./data/{data_type}_llm_labels_on_{report_type}_reports.xlsx"
     df.to_excel(output_filename, index=False)
     return output_filename
 
 
-def get_prompt(type):
+def get_prompt(data_type):
     # Load the appropriate prompt based on the type
     with open("prompts.json", "r") as prompts:
-        if type == "canine_abdomen":
-            prompt = json.load(prompts)["canine_abdomen"]
-        elif type == "canine_thorax":
-            prompt = json.load(prompts)["canine_thorax"]
-        elif type == "feline_thorax":
-            prompt = json.load(prompts)["feline_thorax"]
+        prompt = json.load(prompts)[data_type]
     return prompt
 
 
@@ -157,10 +153,13 @@ def build_schema(condition_names):
     }
 
 
-def call_llm(type, model, gold_df, condition_names):
+def call_llm(data_type, model, gold_df, condition_names, matrix_type):
     # Grabs radiologist reports and appropriate prompt
-    reports = gold_df.iloc[:, 0:4]
-    prompt = get_prompt(type)
+    if matrix_type == 2:
+        reports = gold_df.iloc[:, 1:4] # radiologist reports
+    else:
+        reports = gold_df.iloc[:, 5:8] # AI reports
+    prompt = get_prompt(data_type)
     schema = build_schema(condition_names)
 
     full_response = []
@@ -184,7 +183,7 @@ def call_llm(type, model, gold_df, condition_names):
         full_response.append(json.loads(content))
 
     pred_df = pd.DataFrame(full_response, columns=condition_names)
-    save_to_excel(pred_df, type)
+    save_to_excel(pred_df, data_type, matrix_type)
 
     return pred_df
 
@@ -194,25 +193,30 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gold', type=str, required=True,
                         help='Your gold labels excel file path')
-    parser.add_argument('--data_type', default="canine_thorax", type=str, 
+    parser.add_argument('--data_type', type=str, 
                         required=True, choices=RADIOLOGY_TYPES, help='The type of data (canine_abdomen, canine_thorax, feline_thorax)')
     parser.add_argument("--model", default="qwen3:4b", 
                         help="Ollama model name (default: qwen3:4b)")
-    parser.add_argument("--rows", type=int, default=100, choices=range(1, 100),
+    parser.add_argument("--rows", type=int, default=100, choices=range(1, 101),
                         help="Only the first N data rows are sent to the LLM (default: 100)")
-    # parser.add_argument('--matrix_type', default="2", type=str, 
-    #                     choices=["1", "2"], help='Type of confusion matrix to generate (1 or 2)')
+    parser.add_argument('--both_matrices', default="no", type=str, 
+                        choices=["no", "yes"], help='Only matrix 2 or both')
 
     args = parser.parse_args()
 
-    conditions = get_conditions_from_excel(args.gold)
+    full_df = pd.read_excel(args.gold)
+    conditions = get_conditions(full_df)
 
-    gold_df = pd.read_excel(args.gold)[:args.rows]
-    pred_df = call_llm(args.data_type, args.model, gold_df, list(conditions.columns))
+    gold_df = full_df[:args.rows]
+    pred_df = call_llm(args.data_type, args.model, gold_df, list(conditions.columns), matrix_type=2)
 
-    cm_path = format_confusion_matrix(conditions)
-    fill_confusion_matrix(gold_df, pred_df, cm_path, conditions, args.data_type)
+    cm_2_path = format_confusion_matrix(conditions, args.data_type, matrix_type=2)
+    fill_confusion_matrix(gold_df, pred_df, cm_2_path, conditions, args.data_type, matrix_type=2)
 
+    if args.both_matrices == "yes":
+        ai_pred = call_llm(args.data_type, args.model, gold_df, list(conditions.columns), matrix_type=1)
+        cm_1_path = format_confusion_matrix(conditions, args.data_type, matrix_type=1)
+        fill_confusion_matrix(pred_df, ai_pred, cm_1_path, conditions, args.data_type, matrix_type=1)
 
 if __name__ == '__main__':
     main()
