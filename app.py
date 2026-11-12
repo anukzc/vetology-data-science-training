@@ -3,15 +3,12 @@
 
 import argparse
 import pandas as pd
-import matplotlib.pyplot as plt
 import ollama
 import dotenv
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 import json
-import matplotlib
-matplotlib.use('Agg')
 
 dotenv.load_dotenv()
 
@@ -112,20 +109,6 @@ def fill_confusion_matrix(gold_df, pred_df, cm_path,
                 column=11, value=tp + fn + tn + fp)  # Ground Truth Check
     wb.save(cm_path)
 
-    # One overall confusion matrix across all conditions
-    all_true = gold_df[conditions.columns].values.ravel()
-    all_pred = pred_df[conditions.columns].values.ravel()
-    overall_cm = confusion_matrix(all_true, all_pred,
-                                  labels=["Positive", "Negative"])
-
-    disp = ConfusionMatrixDisplay(overall_cm,
-                                  display_labels=["Positive", "Negative"])
-    disp.plot(cmap="Blues", colorbar=False)
-    disp.ax_.set_title(f"{data_type}: all conditions")
-    plt.savefig(f"./data/{data_type}_confusion_matrix_"
-                f"{matrix_type}.png", bbox_inches="tight")
-    plt.close()
-
 
 def save_to_excel(df, data_type, matrix_type):
     if matrix_type == 2:
@@ -207,8 +190,9 @@ def main():
                         choices=range(1, 101),
                         help="Only the first N data rows are sent "
                         "to the LLM (default: 100)")
-    parser.add_argument('--both_matrices', default="no", type=str,
-                        choices=["no", "yes"], help='Only matrix 2 or both')
+    parser.add_argument('--both_matrices', default="false",
+                        type=str, choices=["false", "true"],
+                        help='Only matrix 2 or both')
 
     args = parser.parse_args()
 
@@ -224,7 +208,7 @@ def main():
     fill_confusion_matrix(gold_df, pred_df, cm_2_path,
                           conditions, args.data_type, matrix_type=2)
 
-    if args.both_matrices == "yes":
+    if args.both_matrices == "true":
         ai_pred = call_llm(args.data_type, args.model,
                            gold_df, list(conditions.columns), matrix_type=1)
         cm_1_path = format_confusion_matrix(conditions,
